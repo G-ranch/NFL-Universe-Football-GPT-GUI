@@ -1,32 +1,21 @@
--- Studio Admin Panel: Super Speed + NoClip + AutoTackle + Minimize
--- LocalScript: StarterPlayerScripts
-
+-- LocalScript: Admin Panel GUI
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local player = Players.LocalPlayer
+local remote = ReplicatedStorage:WaitForChild("DevTeleportHitboxControl")
 
--- Remote for AutoTackle
-local REMOTE_NAME = "DevTeleportHitboxControl"
-local remote = ReplicatedStorage:FindFirstChild(REMOTE_NAME)
-if not remote then
-    remote = Instance.new("RemoteEvent")
-    remote.Name = REMOTE_NAME
-    remote.Parent = ReplicatedStorage
-end
-
--- GUI setup
+-- GUI
 local gui = Instance.new("ScreenGui")
-gui.Name = "StudioAdminGUI"
+gui.Name = "AdminPanelGUI"
 gui.ResetOnSpawn = false
 gui.Parent = player:WaitForChild("PlayerGui")
 
 -- Panel
 local panel = Instance.new("Frame")
 panel.Size = UDim2.new(0, 160, 0, 170)
-panel.Position = UDim2.new(0.05, 0, 0.6, 0)
+panel.Position = UDim2.new(0.05,0,0.6,0)
 panel.BackgroundColor3 = Color3.fromRGB(35,35,35)
 panel.BorderSizePixel = 0
 panel.Active = true
@@ -35,7 +24,7 @@ panel.Parent = gui
 
 -- Title
 local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, -25, 0, 25)
+title.Size = UDim2.new(1,-25,0,25)
 title.Position = UDim2.new(0,5,0,5)
 title.BackgroundTransparency = 1
 title.Font = Enum.Font.SourceSansBold
@@ -45,29 +34,29 @@ title.TextColor3 = Color3.fromRGB(255,255,255)
 title.TextXAlignment = Enum.TextXAlignment.Left
 title.Parent = panel
 
--- Minimize button
+-- Minimize
 local minimize = Instance.new("TextButton")
-minimize.Size = UDim2.new(0, 20, 0, 20)
-minimize.Position = UDim2.new(1, -25, 0, 5)
+minimize.Size = UDim2.new(0,20,0,20)
+minimize.Position = UDim2.new(1,-25,0,5)
 minimize.BackgroundColor3 = Color3.fromRGB(80,80,80)
-minimize.TextColor3 = Color3.new(1,1,1)
 minimize.Text = "-"
+minimize.TextColor3 = Color3.new(1,1,1)
 minimize.Font = Enum.Font.SourceSansBold
 minimize.TextSize = 20
 minimize.Parent = panel
 
 -- Buttons container
 local buttonContainer = Instance.new("Frame")
-buttonContainer.Size = UDim2.new(1,0,1, -35)
+buttonContainer.Size = UDim2.new(1,0,1,-35)
 buttonContainer.Position = UDim2.new(0,0,0,30)
 buttonContainer.BackgroundTransparency = 1
 buttonContainer.Parent = panel
 
--- Helper to create buttons
-local function makeButton(text, yPos, color)
+-- Helper
+local function makeButton(text,yPos,color)
 	local btn = Instance.new("TextButton")
-	btn.Size = UDim2.new(1, -20, 0, 35)
-	btn.Position = UDim2.new(0, 10, 0, yPos)
+	btn.Size = UDim2.new(1,-20,0,35)
+	btn.Position = UDim2.new(0,10,0,yPos)
 	btn.BackgroundColor3 = color
 	btn.TextColor3 = Color3.new(1,1,1)
 	btn.TextSize = 18
@@ -78,9 +67,9 @@ local function makeButton(text, yPos, color)
 end
 
 -- Buttons
-local speedBtn = makeButton("Super Speed", 0, Color3.fromRGB(40,180,90))
-local noclipBtn = makeButton("NoClip: OFF", 45, Color3.fromRGB(90,90,180))
-local autoTackleBtn = makeButton("AutoTackle", 90, Color3.fromRGB(0,170,255))
+local speedBtn = makeButton("Super Speed",0,Color3.fromRGB(40,180,90))
+local noclipBtn = makeButton("NoClip: OFF",45,Color3.fromRGB(90,90,180))
+local autoTackleBtn = makeButton("AutoTackle",90,Color3.fromRGB(0,170,255))
 
 -- Super Speed
 speedBtn.MouseButton1Click:Connect(function()
@@ -88,28 +77,18 @@ speedBtn.MouseButton1Click:Connect(function()
 	local hum = char:FindFirstChildOfClass("Humanoid")
 	if hum then
 		hum.WalkSpeed = 108
-		speedBtn.Text = "Speed: 108"
-		task.wait(1)
-		speedBtn.Text = "Super Speed"
 	end
 end)
 
 -- NoClip
 local noclipOn = false
-local noclipConnection
-
-local function setNoclip(state)
-	noclipOn = state
-	noclipBtn.Text = "NoClip: " .. (state and "ON" or "OFF")
-	noclipBtn.BackgroundColor3 = state and Color3.fromRGB(60,220,100) or Color3.fromRGB(90,90,180)
-
-	if noclipConnection then
-		noclipConnection:Disconnect()
-		noclipConnection = nil
-	end
-
-	if state then
-		noclipConnection = RunService.Stepped:Connect(function()
+local noclipConn
+noclipBtn.MouseButton1Click:Connect(function()
+	noclipOn = not noclipOn
+	noclipBtn.Text = "NoClip: "..(noclipOn and "ON" or "OFF")
+	if noclipConn then noclipConn:Disconnect() noclipConn = nil end
+	if noclipOn then
+		noclipConn = RunService.Stepped:Connect(function()
 			local char = player.Character
 			if not char then return end
 			for _, part in ipairs(char:GetDescendants()) do
@@ -128,10 +107,6 @@ local function setNoclip(state)
 			end
 		end
 	end
-end
-
-noclipBtn.MouseButton1Click:Connect(function()
-	setNoclip(not noclipOn)
 end)
 
 -- AutoTackle
@@ -139,10 +114,9 @@ autoTackleBtn.MouseButton1Click:Connect(function()
 	remote:FireServer("Start")
 end)
 
--- Minimize / Expand
+-- Minimize/Expand
 local minimized = false
 local minimizedIcon
-
 local function togglePanel()
 	if minimized then
 		if minimizedIcon then minimizedIcon:Destroy() end
@@ -161,7 +135,6 @@ local function togglePanel()
 		minimizedIcon.Parent = gui
 		minimizedIcon.Active = true
 		minimizedIcon.Draggable = true
-
 		minimizedIcon.MouseButton1Click:Connect(function()
 			panel.Position = minimizedIcon.Position
 			togglePanel()
@@ -169,5 +142,4 @@ local function togglePanel()
 		minimized = true
 	end
 end
-
 minimize.MouseButton1Click:Connect(togglePanel)
