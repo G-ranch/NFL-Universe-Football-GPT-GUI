@@ -1,175 +1,298 @@
--- Admin Panel GUI (LocalScript)
+-- Delta-friendly Admin Panel (paste into Delta / executor while in a live game)
+-- Client-only GUI: SuperSpeed, NoClip (local), JumpPower, Magnet objects (folder), Minimize, animations
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
-local player = Players.LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
-local hrp = character:WaitForChild("HumanoidRootPart")
-local hum = character:WaitForChild("Humanoid")
+local Workspace = game:GetService("Workspace")
 
--- Settings
+-- Config
+local MAG_FOLDER_NAME = "Pickups"    -- folder name in workspace to magnet (change if needed)
 local MAG_RADIUS = 30
 local MAG_SPEED = 80
-local MAG_FOLDER = workspace:WaitForChild("Pickups") -- Folder to magnet
+local DEFAULT_WALKSPEED = 16
+local DEFAULT_JUMPPOWER = 50
 
--- GUI
-local gui = Instance.new("ScreenGui")
-gui.Name = "AdminPanelGUI"
-gui.ResetOnSpawn = false
-gui.Parent = player:WaitForChild("PlayerGui")
+-- Wait for local player (executor injects into game; LocalPlayer should exist)
+local player = Players.LocalPlayer
+local timeout = 10
+local t0 = tick()
+while not player and tick() - t0 < timeout do
+    task.wait(0.1)
+    player = Players.LocalPlayer
+end
+if not player then
+    warn("AdminPanel: LocalPlayer not found. Run this in a player context.")
+    return
+end
 
--- Panel
-local panel = Instance.new("Frame")
-panel.Size = UDim2.new(0, 250, 0, 300)
-panel.Position = UDim2.new(0.05, 0, 0.6, 0)
-panel.BackgroundColor3 = Color3.fromRGB(25,25,25)
-panel.BorderSizePixel = 0
-panel.Active = true
-panel.Draggable = true
-panel.Parent = gui
+-- Wait for character & hum/HRP
+local function getCharacterParts()
+    local char = player.Character
+    if not char then return nil end
+    local hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("LowerTorso")
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    return char, hrp, hum
+end
 
--- Rounded corners
-local panelCorner = Instance.new("UICorner")
-panelCorner.CornerRadius = UDim.new(0, 20)
-panelCorner.Parent = panel
+-- Safe folder reference for magnet (may be nil if not present)
+local MAG_FOLDER = Workspace:FindFirstChild(MAG_FOLDER_NAME)
+
+-- Keep track of connections for cleanup
+local connections = {}
+local magnetConnection = nil
+local noclipConnection = nil
+
+-- Utility: connect helper (store for later disconnect)
+local function connect(event, fn)
+    local c = event:Connect(fn)
+    table.insert(connections, c)
+    return c
+end
+
+-- Create or reuse a ScreenGui (executor-friendly)
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "DeltaAdminPanelGui"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = player:FindFirstChildOfClass("PlayerGui") or player:WaitForChild("PlayerGui")
+
+-- UI builder helpers
+local function make(name, class, props)
+    local obj = Instance.new(class)
+    obj.Name = name
+    if props then
+        for k,v in pairs(props) do obj[k] = v end
+    end
+    return obj
+end
+
+-- Panel (starts slightly off-screen for slide-in)
+local panel = make("Panel", "Frame", {
+    Size = UDim2.new(0, 300, 0, 340),
+    Position = UDim2.new(-0.35, 0, 0.5, -170),
+    BackgroundColor3 = Color3.fromRGB(24,24,24),
+    BorderSizePixel = 0,
+    Active = true,
+    Visible = true,
+})
+panel.Parent = screenGui
+local panelCorner = make("PanelCorner", "UICorner", {CornerRadius = UDim.new(0,18)}); panelCorner.Parent = panel
+
+-- Slide-in
+TweenService:Create(panel, TweenInfo.new(0.6, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Position = UDim2.new(0.03,0,0.5,-170)}):Play()
 
 -- Title
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1,-25,0,35)
-title.Position = UDim2.new(0,10,0,10)
-title.BackgroundTransparency = 1
-title.Font = Enum.Font.GothamBold
-title.TextSize = 24
-title.Text = "Admin Panel"
-title.TextColor3 = Color3.fromRGB(255,255,255)
-title.TextXAlignment = Enum.TextXAlignment.Left
+local title = make("Title","TextLabel",{
+    Size = UDim2.new(1,-40,0,40),
+    Position = UDim2.new(0,20,0,10),
+    BackgroundTransparency = 1,
+    Text = "GPT Admin",
+    Font = Enum.Font.GothamBold,
+    TextSize = 22,
+    TextColor3 = Color3.fromRGB(255,255,255),
+    TextXAlignment = Enum.TextXAlignment.Left,
+})
 title.Parent = panel
 
 -- Minimize button
-local minimize = Instance.new("TextButton")
-minimize.Size = UDim2.new(0,30,0,30)
-minimize.Position = UDim2.new(1,-40,0,10)
-minimize.BackgroundColor3 = Color3.fromRGB(80,80,80)
-minimize.Text = "-"
-minimize.TextColor3 = Color3.new(1,1,1)
-minimize.Font = Enum.Font.GothamBold
-minimize.TextSize = 24
-minimize.AutoButtonColor = true
-minimize.Parent = panel
-local minCorner = Instance.new("UICorner")
-minCorner.CornerRadius = UDim.new(0,8)
-minCorner.Parent = minimize
+local minBtn = make("Min", "TextButton", {
+    Size = UDim2.new(0,30,0,30),
+    Position = UDim2.new(1,-45,0,8),
+    BackgroundColor3 = Color3.fromRGB(70,70,70),
+    Text = "-",
+    Font = Enum.Font.GothamBold,
+    TextSize = 20,
+    AutoButtonColor = true,
+})
+local minCorner = make("MinCorner","UICorner",{CornerRadius = UDim.new(0,6)}); minCorner.Parent = minBtn
+minBtn.Parent = panel
 
 -- Container for buttons
-local buttonContainer = Instance.new("Frame")
-buttonContainer.Size = UDim2.new(1,0,1,-60)
-buttonContainer.Position = UDim2.new(0,0,0,50)
-buttonContainer.BackgroundTransparency = 1
-buttonContainer.Parent = panel
+local container = make("Container","Frame",{Size = UDim2.new(1,0,1,-70), Position = UDim2.new(0,0,0,60), BackgroundTransparency = 1})
+container.Parent = panel
 
--- Helper to create animated buttons
-local function makeButton(name, text, color, yPos, onClick)
-	local btn = Instance.new("TextButton")
-	btn.Name = name
-	btn.Size = UDim2.new(1,-40,0,45)
-	btn.Position = UDim2.new(0,20,0,yPos)
-	btn.BackgroundColor3 = color
-	btn.TextColor3 = Color3.new(1,1,1)
-	btn.TextSize = 20
-	btn.Font = Enum.Font.GothamBold
-	btn.Text = text
-	btn.Parent = buttonContainer
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0,12)
-	corner.Parent = btn
-	
-	-- Hover animation
-	btn.MouseEnter:Connect(function()
-		TweenService:Create(btn,TweenInfo.new(0.2),{BackgroundColor3 = color:Lerp(Color3.new(1,1,1),0.15)}):Play()
-	end)
-	btn.MouseLeave:Connect(function()
-		TweenService:Create(btn,TweenInfo.new(0.2),{BackgroundColor3 = color}):Play()
-	end)
-	
-	btn.MouseButton1Click:Connect(onClick)
-	return btn
+-- Button factory (animated)
+local function makeButton(text, color, y)
+    local btn = make(text, "TextButton", {
+        Size = UDim2.new(1,-40,0,48),
+        Position = UDim2.new(0,20,0,y),
+        BackgroundColor3 = color,
+        Text = text,
+        Font = Enum.Font.GothamBold,
+        TextSize = 18,
+        TextColor3 = Color3.new(1,1,1),
+    })
+    local c = make("corner","UICorner",{CornerRadius = UDim.new(0,12)}); c.Parent = btn
+    -- gradient
+    local g = Instance.new("UIGradient"); g.Color = ColorSequence.new({ColorSequenceKeypoint.new(0,color:Lerp(Color3.new(1,1,1),0.08)), ColorSequenceKeypoint.new(1,color)}); g.Rotation = 45; g.Parent = btn
+    -- hover tween
+    btn.MouseEnter:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(1,-30,0,52)}):Play()
+    end)
+    btn.MouseLeave:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(1,-40,0,48)}):Play()
+    end)
+    btn.Parent = container
+    return btn
 end
 
--- SuperSpeed button
-local speedBtn = makeButton("SuperSpeed","Super Speed",Color3.fromRGB(40,180,90),0,function()
-	if hum then hum.WalkSpeed = 108 end
-end)
+-- Buttons
+local speedBtn = makeButton("Super Speed", Color3.fromRGB(40,180,90), 0)
+local noclipBtn = makeButton("NoClip: OFF", Color3.fromRGB(90,90,180), 62)
+local jumpBtn = makeButton("Jump Power 50", Color3.fromRGB(255,140,0), 124)
+local magBtn = makeButton("Magnet Objects", Color3.fromRGB(0,170,255), 186)
+local closeBtn = makeButton("Close Panel", Color3.fromRGB(160,60,200), 248)
 
--- NoClip toggle
-local noclipOn = false
-local noclipConn
-local noclipBtn = makeButton("NoClip","NoClip: OFF",Color3.fromRGB(90,90,180),60,function()
-	noclipOn = not noclipOn
-	noclipBtn.Text = "NoClip: "..(noclipOn and "ON" or "OFF")
-	if noclipConn then noclipConn:Disconnect() noclipConn = nil end
-	if noclipOn then
-		noclipConn = RunService.Stepped:Connect(function()
-			for _, part in ipairs(character:GetDescendants()) do
-				if part:IsA("BasePart") then part.CanCollide = false end
-			end
-		end)
-	else
-		for _, part in ipairs(character:GetDescendants()) do
-			if part:IsA("BasePart") then part.CanCollide = true end
-		end
-	end
-end)
-
--- JumpPower button
-local jumpBtn = makeButton("JumpPower","Jump Power 50",Color3.fromRGB(255,140,0),120,function()
-	if hum then hum.JumpPower = 50 end
-end)
-
--- Magnet button (objects only)
-local magBtn = makeButton("Magnet","Magnet Objects",Color3.fromRGB(0,170,255),180,function()
-	-- Always on
-	RunService.RenderStepped:Connect(function(dt)
-		for _, obj in pairs(MAG_FOLDER:GetChildren()) do
-			if obj:IsA("BasePart") then
-				local distance = (hrp.Position - obj.Position).Magnitude
-				if distance <= MAG_RADIUS then
-					local direction = (hrp.Position - obj.Position).Unit
-					obj.CFrame = obj.CFrame + direction * MAG_SPEED * dt
-				end
-			end
-		end
-	end)
-end)
-
--- Minimize / Expand functionality
-local minimized = false
+-- Minimized squircle icon (created when minimized)
 local minimizedIcon
-local function togglePanel()
-	if minimized then
-		if minimizedIcon then minimizedIcon:Destroy() end
-		panel.Visible = true
-		minimized = false
-	else
-		panel.Visible = false
-		minimizedIcon = Instance.new("TextButton")
-		minimizedIcon.Size = UDim2.new(0,120,0,120)
-		minimizedIcon.Position = panel.Position
-		minimizedIcon.BackgroundColor3 = Color3.fromRGB(50,50,50)
-		minimizedIcon.Text = "GPT"
-		minimizedIcon.TextColor3 = Color3.new(1,1,1)
-		minimizedIcon.Font = Enum.Font.GothamBold
-		minimizedIcon.TextSize = 36
-		minimizedIcon.Parent = gui
-		minimizedIcon.Active = true
-		minimizedIcon.Draggable = true
-		local corner = Instance.new("UICorner")
-		corner.CornerRadius = UDim.new(0,50)
-		corner.Parent = minimizedIcon
-		minimizedIcon.MouseButton1Click:Connect(function()
-			panel.Position = minimizedIcon.Position
-			togglePanel()
-		end)
-		minimized = true
-	end
+local minimized = false
+
+local function createMinIcon(pos)
+    if minimizedIcon and minimizedIcon.Parent then minimizedIcon:Destroy() end
+    minimizedIcon = make("MinIcon","TextButton",{
+        Size = UDim2.new(0,110,0,110),
+        Position = pos or panel.Position,
+        BackgroundColor3 = Color3.fromRGB(50,50,50),
+        Text = "GPT",
+        Font = Enum.Font.GothamBlack,
+        TextSize = 28,
+        TextColor3 = Color3.new(1,1,1),
+        AutoButtonColor = true
+    })
+    local corner = make("minCorner","UICorner",{CornerRadius = UDim.new(0,28)}); corner.Parent = minimizedIcon
+    minimizedIcon.Parent = screenGui
+    minimizedIcon.Active = true
+    minimizedIcon.Draggable = true
+    minimizedIcon.MouseButton1Click:Connect(function()
+        -- restore panel to icon pos
+        local iconPos = minimizedIcon.Position
+        panel.Position = iconPos
+        minimizedIcon:Destroy()
+        minimizedIcon = nil
+        minimized = false
+        panel.Visible = true
+    end)
 end
-minimize.MouseButton1Click:Connect(togglePanel)
+
+minBtn.MouseButton1Click:Connect(function()
+    if minimized then
+        -- restore
+        if minimizedIcon then minimizedIcon:Destroy() end
+        panel.Visible = true
+        minimized = false
+    else
+        -- minimize: create icon at panel pos
+        createMinIcon(panel.Position)
+        panel.Visible = false
+        minimized = true
+    end
+end)
+
+-- Super Speed behaviour
+speedBtn.MouseButton1Click:Connect(function()
+    local char, hrp, hum = getCharacterParts()
+    if hum then
+        hum.WalkSpeed = 108
+        -- flash text
+        local old = speedBtn.Text
+        speedBtn.Text = "Speed: 108"
+        task.delay(0.8, function() if speedBtn and speedBtn.Parent then speedBtn.Text = old end end)
+    end
+end)
+
+-- NoClip local toggle
+local noclipOn = false
+noclipBtn.MouseButton1Click:Connect(function()
+    noclipOn = not noclipOn
+    noclipBtn.Text = "NoClip: "..(noclipOn and "ON" or "OFF")
+    if noclipOn then
+        if noclipConnection then noclipConnection:Disconnect() noclipConnection = nil end
+        noclipConnection = RunService.Stepped:Connect(function()
+            local char = player.Character
+            if not char then return end
+            for _, part in ipairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = false
+                end
+            end
+        end)
+    else
+        if noclipConnection then noclipConnection:Disconnect() noclipConnection = nil end
+        local char = player.Character
+        if char then
+            for _, part in ipairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = true
+                end
+            end
+        end
+    end
+end)
+
+-- Jump power
+jumpBtn.MouseButton1Click:Connect(function()
+    local _,_,hum = getCharacterParts()
+    if hum then
+        hum.JumpPower = 50
+        jumpBtn.Text = "Jump: 50"
+        task.delay(0.8, function() if jumpBtn and jumpBtn.Parent then jumpBtn.Text = "Jump Power 50" end end)
+    end
+end)
+
+-- Magnet toggle (toggle behaviour to avoid stacking multiple connections)
+local magnetOn = false
+magBtn.MouseButton1Click:Connect(function()
+    if not MAG_FOLDER then
+        MAG_FOLDER = Workspace:FindFirstChild(MAG_FOLDER_NAME)
+        if not MAG_FOLDER then
+            magBtn.Text = "No Folder: "..MAG_FOLDER_NAME
+            task.delay(1.2, function() if magBtn and magBtn.Parent then magBtn.Text = "Magnet Objects" end end)
+            return
+        end
+    end
+
+    magnetOn = not magnetOn
+    magBtn.Text = magnetOn and "Magnet: ON" or "Magnet Objects"
+    if magnetOn then
+        -- ensure previous connection cleared
+        if magnetConnection then magnetConnection:Disconnect() magnetConnection = nil end
+        magnetConnection = RunService.RenderStepped:Connect(function(dt)
+            local _, hrp = select(1, getCharacterParts())
+            if not hrp then return end
+            for _, obj in ipairs(MAG_FOLDER:GetChildren()) do
+                if obj:IsA("BasePart") then
+                    local dist = (hrp.Position - obj.Position).Magnitude
+                    if dist <= MAG_RADIUS and dist > 0.5 then
+                        local dir = (hrp.Position - obj.Position).Unit
+                        -- smooth lerp to avoid jitter
+                        local move = dir * MAG_SPEED * dt
+                        obj.CFrame = obj.CFrame + move
+                    end
+                end
+            end
+        end)
+    else
+        if magnetConnection then magnetConnection:Disconnect() magnetConnection = nil end
+    end
+end)
+
+-- Close panel (clean up connections and UI)
+closeBtn.MouseButton1Click:Connect(function()
+    -- disconnect connections safely
+    if magnetConnection then magnetConnection:Disconnect(); magnetConnection = nil end
+    if noclipConnection then noclipConnection:Disconnect(); noclipConnection = nil end
+    for _, c in ipairs(connections) do
+        pcall(function() c:Disconnect() end)
+    end
+    -- destroy UI
+    if minimizedIcon and minimizedIcon.Parent then minimizedIcon:Destroy() end
+    if screenGui and screenGui.Parent then screenGui:Destroy() end
+end)
+
+-- safety: cleanup on character removal (restore collides)
+connect(player.CharacterRemoving, function()
+    if noclipConnection then noclipConnection:Disconnect(); noclipConnection = nil end
+end)
+
+-- done
+print("[AdminPanel] ready. Paste this into Delta while in a live game. Change MAG_FOLDER_NAME at top if needed.")
