@@ -1,5 +1,4 @@
---// NFL Admin Panel v2.3
---// All buttons fully functional
+--// NFL Admin Panel v2.4 - Fully Functional
 --// By ChatGPT
 
 local Players = game:GetService("Players")
@@ -114,50 +113,48 @@ local speedOn = false
 local noclipOn = false
 local noclipConnection
 
--- Find footballs
-local function getFootballForPlayer(plr)
-	return workspace:FindFirstChild("Football ("..plr.Name..")")
-end
-
-local function getAnyFootball()
-	for _, obj in pairs(workspace:GetChildren()) do
-		if obj.Name:match("^Football %(.+%)$") then
-			return obj
+--// Football Scanner
+local function findFootball()
+	for _, obj in pairs(workspace:GetDescendants()) do
+		if obj:IsA("BasePart") and (obj.Name == "Football" or obj.Name:match("^Football %(.+%)$")) then
+			local isHeld = obj.Parent:FindFirstChildOfClass("Humanoid") ~= nil
+			local owner = nil
+			if isHeld then owner = obj.Parent.Name end
+			return obj, owner, isHeld
 		end
 	end
+	return nil,nil,false
 end
 
 -- STEAL BALL
 stealBtn.MouseButton1Click:Connect(function()
 	local char, hum, hrp = getChar()
-	local ball = getAnyFootball()
+	local ball, owner, isHeld = findFootball()
 	if not ball then
-		statusLabel.Text = "❌ No football found!"
+		statusLabel.Text = "❌ No football!"
 		statusLabel.TextColor3 = Color3.fromRGB(255,50,50)
 		return
 	end
-	-- Remove existing welds
-	for _, w in pairs(ball:GetDescendants()) do
-		if w:IsA("Weld") then w:Destroy() end
-	end
+	-- Remove welds if any
+	for _, w in pairs(ball:GetDescendants()) do if w:IsA("Weld") then w:Destroy() end end
 	local hand = char:FindFirstChild("RightHand") or char:WaitForChild("RightHand")
 	local weld = Instance.new("Weld")
 	weld.Part0 = hand
 	weld.Part1 = ball
 	weld.C0 = CFrame.new(0,0,0)
 	weld.Parent = hand
-	statusLabel.Text = "🏈 Stole ball!"
+	statusLabel.Text = "🏈 Stole the ball!"
 	statusLabel.TextColor3 = Color3.fromRGB(50,255,100)
 end)
 
--- MAG (teleport in front until ball is yours)
+-- MAG
 magBtn.MouseButton1Click:Connect(function()
-	magnetActive = not magnetActive
 	local char, hum, hrp = getChar()
+	magnetActive = not magnetActive
 	if magnetActive then
 		statusLabel.Text = "🧲 Chasing ball..."
 		magnetLoop = RunService.Heartbeat:Connect(function()
-			local ball = getAnyFootball()
+			local ball, owner, isHeld = findFootball()
 			if not ball then
 				magnetActive = false
 				if magnetLoop then magnetLoop:Disconnect() end
@@ -165,7 +162,7 @@ magBtn.MouseButton1Click:Connect(function()
 				statusLabel.TextColor3 = Color3.fromRGB(255,50,50)
 				return
 			end
-			if ball.Parent == char then
+			if ball:IsDescendantOf(char) then
 				magnetActive = false
 				if magnetLoop then magnetLoop:Disconnect() end
 				statusLabel.Text = "🟢 Ball acquired!"
@@ -184,25 +181,25 @@ magBtn.MouseButton1Click:Connect(function()
 	end
 end)
 
--- AUTO TACKLE (0.1s delay)
+-- AUTO TACKLE
 tackleBtn.MouseButton1Click:Connect(function()
 	local char, hum, hrp = getChar()
-	local ball = getAnyFootball()
+	task.wait(0.1)
+	local ball, owner, isHeld = findFootball()
 	if not ball then
 		statusLabel.Text = "❌ No football!"
 		statusLabel.TextColor3 = Color3.fromRGB(255,50,50)
 		return
 	end
-	task.wait(0.1)
-	if hrp and ball.Parent ~= char then
-		local dir = (ball.Position - hrp.Position).Unit
-		hrp.CFrame = CFrame.new(ball.Position - dir*1)
-		statusLabel.Text = "💥 Tackled!"
-		statusLabel.TextColor3 = Color3.fromRGB(255,200,50)
-	else
-		statusLabel.Text = "🟢 Ball already yours!"
+	if ball:IsDescendantOf(char) then
+		statusLabel.Text = "🟢 Already have the ball!"
 		statusLabel.TextColor3 = Color3.fromRGB(100,255,100)
+		return
 	end
+	local dir = (ball.Position - hrp.Position).Unit
+	hrp.CFrame = CFrame.new(ball.Position - dir*1)
+	statusLabel.Text = "💥 Auto Tackle!"
+	statusLabel.TextColor3 = Color3.fromRGB(255,200,50)
 end)
 
 -- SUPER SPEED
@@ -229,10 +226,8 @@ noclipBtn.MouseButton1Click:Connect(function()
 		noclipBtn.BackgroundColor3 = Color3.fromRGB(50,255,100)
 		if noclipConnection then noclipConnection:Disconnect() end
 		noclipConnection = RunService.Stepped:Connect(function()
-			for _,v in pairs(char:GetDescendants()) do
-				if v:IsA("BasePart") then
-					v.CanCollide = false
-				end
+			for _, v in pairs(char:GetDescendants()) do
+				if v:IsA("BasePart") then v.CanCollide = false end
 			end
 		end)
 	else
@@ -242,14 +237,13 @@ noclipBtn.MouseButton1Click:Connect(function()
 	end
 end)
 
---// Minimize Icon
+-- Minimize Icon
 local nflIcon = Instance.new("TextButton")
 nflIcon.Text = "🏈 NFL"
 nflIcon.Font = Enum.Font.GothamBold
-nflIcon.TextSize = 28
-nflIcon.TextColor3 = Color3.fromRGB(255,255,255)
+nflIcon.TextSize = 26
+nflIcon.TextColor3 = Color3.new(1,1,1)
 nflIcon.Size = UDim2.new(0,150,0,150)
-nflIcon.Position = panel.Position
 nflIcon.BackgroundColor3 = Color3.fromRGB(60,100,255)
 nflIcon.BackgroundTransparency = 0.1
 nflIcon.Visible = false
@@ -264,17 +258,7 @@ glow.Thickness = 2
 glow.Color = Color3.fromRGB(140,180,255)
 glow.Transparency = 0.3
 
--- Hover animation
-nflIcon.MouseEnter:Connect(function()
-	TweenService:Create(nflIcon,TweenInfo.new(0.25),{BackgroundColor3=Color3.fromRGB(100,140,255),Size=UDim2.new(0,165,0,165)}):Play()
-	TweenService:Create(glow,TweenInfo.new(0.25),{Transparency=0}):Play()
-end)
-nflIcon.MouseLeave:Connect(function()
-	TweenService:Create(nflIcon,TweenInfo.new(0.25),{BackgroundColor3=Color3.fromRGB(60,100,255),Size=UDim2.new(0,150,0,150)}):Play()
-	TweenService:Create(glow,TweenInfo.new(0.25),{Transparency=0.3}):Play()
-end)
-
--- Minimize
+-- Minimize behavior
 minimizeBtn.MouseButton1Click:Connect(function()
 	local pos = panel.Position
 	TweenService:Create(panel,TweenInfo.new(0.3),{Size=UDim2.new(0,0,0,0),BackgroundTransparency=1}):Play()
@@ -286,6 +270,7 @@ end)
 
 -- Restore
 nflIcon.MouseButton1Click:Connect(function()
+	panel.Position = nflIcon.Position
 	panel.Visible = true
 	TweenService:Create(panel,TweenInfo.new(0.3),{Size=UDim2.new(0,380,0,320),BackgroundTransparency=0.2}):Play()
 	nflIcon.Visible = false
