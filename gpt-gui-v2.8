@@ -1,4 +1,4 @@
---// NFL Admin Panel v3 - Polished GUI with working Auto Tackle & improved behavior
+--// NFL Admin Panel v3.1 - Improved Steal Catch + Auto Stop
 --// by ChatGPT (safe local-only)
 
 local Players = game:GetService("Players")
@@ -170,7 +170,7 @@ RunService.Stepped:Connect(function()
 	end
 end)
 
--- Steal Ball
+-- Steal Ball (fixed to move IN FRONT + auto stop)
 local magnetActive = false
 local magnetLoop
 stealBtn.MouseButton1Click:Connect(function()
@@ -178,7 +178,7 @@ stealBtn.MouseButton1Click:Connect(function()
 	if magnetActive then
 		local ball, owner, held = findFootball()
 		if not ball then
-			statusLabel.Text = "❌ No loose ball found!"
+			statusLabel.Text = "❌ No football found!"
 			statusLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
 			magnetActive = false
 			task.wait(2)
@@ -190,15 +190,29 @@ stealBtn.MouseButton1Click:Connect(function()
 		stealBtn.Text = "🏈 STEALING: ON"
 		stealBtn.BackgroundColor3 = Color3.fromRGB(50, 255, 100)
 		statusLabel.Text = "🏈 Moving toward ball!"
-		statusLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
+		statusLabel.TextColor3 = Color3.fromRGB(255, 200, 50)
 
 		magnetLoop = RunService.Heartbeat:Connect(function()
 			local _, hrp = getChar()
 			if not hrp then return end
 			local ball, _, held = findFootball()
 			if ball and not held then
+				local distance = (ball.Position - hrp.Position).Magnitude
+				if distance < 6 then
+					-- Stop when close enough to grab
+					if magnetLoop then magnetLoop:Disconnect() end
+					magnetActive = false
+					stealBtn.Text = "🏈 STEAL BALL"
+					stealBtn.BackgroundColor3 = Color3.fromRGB(50, 60, 90)
+					statusLabel.Text = "✅ Ball reached!"
+					statusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+					task.wait(1.5)
+					statusLabel.Text = "Ready to steal! 😈"
+					return
+				end
+
 				local direction = (ball.Position - hrp.Position).Unit
-				local targetPos = ball.Position - direction * 5 + Vector3.new(0, 3, 0)
+				local targetPos = ball.Position + direction * 3 + Vector3.new(0, 3, 0)
 				pcall(function()
 					hrp.CFrame = CFrame.new(targetPos, ball.Position)
 				end)
@@ -271,7 +285,6 @@ glow.Thickness = 2
 glow.Color = Color3.fromRGB(140, 180, 255)
 glow.Transparency = 0.3
 
--- Hover animation
 nflIcon.MouseEnter:Connect(function()
 	TweenService:Create(nflIcon, TweenInfo.new(0.25, Enum.EasingStyle.Quint), {
 		BackgroundColor3 = Color3.fromRGB(100,140,255),
@@ -287,7 +300,6 @@ nflIcon.MouseLeave:Connect(function()
 	TweenService:Create(glow, TweenInfo.new(0.25), {Transparency = 0.3}):Play()
 end)
 
--- Floating animation
 task.spawn(function()
 	while task.wait(2) do
 		if nflIcon.Visible then
@@ -312,7 +324,7 @@ minimizeBtn.MouseButton1Click:Connect(function()
 	nflIcon.Visible = true
 end)
 
--- Restore behavior (open panel where icon is)
+-- Restore behavior
 nflIcon.MouseButton1Click:Connect(function()
 	panel.Position = nflIcon.Position
 	panel.Visible = true
