@@ -1,5 +1,5 @@
 -- ⚡ G-Admin Panel v5 (Pro GUI) - client-only, safe
--- Squircle icon, minimize/restore, position memory, smart Steal & Tackle
+-- Squircle icon, minimize/restore, position memory, smart Steal & Tackle, mobile/iPad draggable
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -83,7 +83,6 @@ panel.Visible = true
 local pCorner = Instance.new("UICorner", panel); pCorner.CornerRadius = UDim.new(0,12)
 local pStroke = Instance.new("UIStroke", panel); pStroke.Thickness = 1; pStroke.Transparency = 0.7; pStroke.Color = Color3.fromRGB(70,100,255)
 
--- glossy gradient
 local grad = Instance.new("UIGradient", panel)
 grad.Color = ColorSequence.new{
 	ColorSequenceKeypoint.new(0, Color3.fromRGB(26,28,38)),
@@ -95,7 +94,6 @@ grad.Rotation = 90
 local title = Instance.new("Frame", panel)
 title.Size = UDim2.new(1, 0, 0, 36)
 title.BackgroundTransparency = 1
-title.Position = UDim2.new(0,0,0,0)
 local titleLabel = Instance.new("TextLabel", title)
 titleLabel.Size = UDim2.new(1, -12, 1, 0)
 titleLabel.Position = UDim2.new(0, 8, 0, 0)
@@ -151,7 +149,7 @@ end
 -- Buttons
 local stealBtn  = makeButton("🏈 STEAL BALL")
 local tackleBtn = makeButton("💥 AUTO TACKLE")
-local speedBtn  = makeButton("⚡ SUPER SPEED")
+local speedBtn  = makeButton("⚡ SUPER SPEED (128)")
 local noclipBtn = makeButton("🧱 NOCLIP")
 stealBtn.LayoutOrder, tackleBtn.LayoutOrder, speedBtn.LayoutOrder, noclipBtn.LayoutOrder = 1,2,3,4
 
@@ -161,17 +159,16 @@ speedBtn.Parent = panel
 noclipBtn.Parent = panel
 status.Parent = panel
 
--- Squircle Icon (30% smaller than earlier big icon)
+-- Squircle Icon (30% smaller)
 local icon = Instance.new("TextButton", gui)
 icon.Name = "GAdminIcon"
-icon.Size = UDim2.new(0, 96, 0, 96) -- compact squircle
+icon.Size = UDim2.new(0, 96, 0, 96)
 icon.Position = loadPosition(ICON_KEY, UDim2.new(0, 12, 0.5, -48))
 icon.BackgroundColor3 = Color3.fromRGB(50,95,255)
 icon.AutoButtonColor = true
 icon.Text = ""
 icon.Active = true
 
--- icon visuals: squircle via big corner radius + inner circle gradient
 local iCorner = Instance.new("UICorner", icon); iCorner.CornerRadius = UDim.new(0, 26)
 local iStroke = Instance.new("UIStroke", icon); iStroke.Thickness = 2; iStroke.Color = Color3.fromRGB(140,180,255); iStroke.Transparency = 0.2
 local iGradient = Instance.new("UIGradient", icon); iGradient.Rotation = 45
@@ -179,7 +176,6 @@ iGradient.Color = ColorSequence.new{
 	ColorSequenceKeypoint.new(0, Color3.fromRGB(58,110,255)),
 	ColorSequenceKeypoint.new(1, Color3.fromRGB(30,80,220))
 }
--- center emoji
 local icoLabel = Instance.new("TextLabel", icon)
 icoLabel.Size = UDim2.new(1,0,1,0)
 icoLabel.BackgroundTransparency = 1
@@ -188,17 +184,28 @@ icoLabel.Font = Enum.Font.GothamBold
 icoLabel.TextSize = 32
 icoLabel.TextColor3 = Color3.fromRGB(255,255,255)
 
--- Auto-open panel on join
+-- Auto-open panel
 panel.Visible = true
 icon.Visible = false
 
--- ---------- Draggables ----------
+-- ---------- Draggables (mobile/iPad + PC) ----------
 local function makeDraggable(frame, key)
-	local dragging, startPos, startMouse
+	local dragging, startPos, startInput
+
+	local function update(input)
+		if dragging and input then
+			local delta = input.Position - startInput.Position
+			frame.Position = UDim2.new(
+				startPos.X.Scale, startPos.X.Offset + delta.X,
+				startPos.Y.Scale, startPos.Y.Offset + delta.Y
+			)
+		end
+	end
+
 	frame.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			dragging = true
-			startMouse = input.Position
+			startInput = input
 			startPos = frame.Position
 			input.Changed:Connect(function()
 				if input.UserInputState == Enum.UserInputState.End then
@@ -208,12 +215,9 @@ local function makeDraggable(frame, key)
 			end)
 		end
 	end)
-	UserInputService.InputChanged:Connect(function(input)
-		if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-			local delta = input.Position - startMouse
-			frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-		end
-	end)
+
+	frame.InputChanged:Connect(update)
+	UserInputService.InputChanged:Connect(update)
 end
 
 makeDraggable(panel, PANEL_KEY)
@@ -221,11 +225,9 @@ makeDraggable(icon, ICON_KEY)
 
 -- ---------- Minimize / Restore ----------
 local function minimizeToIcon()
-	-- tween panel out
 	TweenService:Create(panel, TweenInfo.new(0.18, Enum.EasingStyle.Quad), {Size = UDim2.new(0,0,0,0), BackgroundTransparency = 1}):Play()
 	task.wait(0.18)
 	panel.Visible = false
-	-- place icon where panel was
 	icon.Position = panel.Position
 	icon.Visible = true
 	savePosition(PANEL_KEY, panel.Position)
@@ -240,7 +242,7 @@ local function restoreFromIcon()
 	savePosition(PANEL_KEY, panel.Position)
 end
 
--- double-click title to minimize
+-- Double-click title to minimize
 do
 	local last = 0
 	title.InputBegan:Connect(function(input)
@@ -257,8 +259,6 @@ end
 icon.MouseButton1Click:Connect(function()
 	if panel.Visible then minimizeToIcon() else restoreFromIcon() end
 end)
-
--- right-click panel to minimize
 panel.InputBegan:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton2 then minimizeToIcon() end
 end)
@@ -266,7 +266,7 @@ end)
 -- ---------- Feature loops & toggles ----------
 local magnetLoop, tackleLoop, speedLoop, noclipLoop
 
--- Steal Ball: in front + auto-stop
+-- Steal Ball
 stealBtn.MouseButton1Click:Connect(function()
 	local active = stealBtn:GetAttribute("Active")
 	active = not active
@@ -281,7 +281,6 @@ stealBtn.MouseButton1Click:Connect(function()
 			local ball, _, held = findFootball()
 			if not hrp then return end
 			if not ball or held then
-				-- no ball or grabbed
 				if magnetLoop then magnetLoop:Disconnect() end
 				stealBtn:SetAttribute("Active", false)
 				stealBtn.Text = "🏈 STEAL BALL"
@@ -310,7 +309,7 @@ stealBtn.MouseButton1Click:Connect(function()
 	end
 end)
 
--- Auto Tackle: chase carrier & stop near
+-- Auto Tackle
 tackleBtn.MouseButton1Click:Connect(function()
 	local active = tackleBtn:GetAttribute("Active")
 	active = not active
@@ -333,8 +332,6 @@ tackleBtn.MouseButton1Click:Connect(function()
 						local dir = (tHRP.Position - hrp.Position).Unit
 						local pos = tHRP.Position - dir * 5 + Vector3.new(0,3,0)
 						pcall(function() hrp.CFrame = CFrame.new(pos, tHRP.Position) end)
-					else
-						-- reached: do nothing (auto-stop)
 					end
 				end
 			end
@@ -347,22 +344,22 @@ tackleBtn.MouseButton1Click:Connect(function()
 	end
 end)
 
--- SuperSpeed
+-- SuperSpeed 128
 speedBtn.MouseButton1Click:Connect(function()
 	local active = speedBtn:GetAttribute("Active")
 	active = not active
 	speedBtn:SetAttribute("Active", active)
 	local _,_,hum = getChar()
 	if active then
-		speedBtn.Text = "⚡ SPEED: ON"
+		speedBtn.Text = "⚡ SPEED: ON (128)"
 		speedBtn.BackgroundColor3 = Color3.fromRGB(255,200,0)
 		setStatus("SuperSpeed on", Color3.fromRGB(255,240,140))
 		if speedLoop then speedLoop:Disconnect() end
-		speedLoop = RunService.Heartbeat:Connect(function() if hum and hum.Parent then hum.WalkSpeed = 80 end end)
+		speedLoop = RunService.Heartbeat:Connect(function() if hum and hum.Parent then hum.WalkSpeed = 128 end end)
 	else
 		if speedLoop then speedLoop:Disconnect() end
 		if hum and hum.Parent then hum.WalkSpeed = 16 end
-		speedBtn.Text = "⚡ SUPER SPEED"
+		speedBtn.Text = "⚡ SUPER SPEED (128)"
 		speedBtn.BackgroundColor3 = Color3.fromRGB(36,42,70)
 		setStatus("Speed off", Color3.fromRGB(160,160,160))
 	end
@@ -394,7 +391,7 @@ noclipBtn.MouseButton1Click:Connect(function()
 	end
 end)
 
--- ---------- Autosave & respawn handling ----------
+-- ---------- Autosave & respawn ----------
 task.spawn(function()
 	while true do
 		task.wait(6)
@@ -405,15 +402,12 @@ end)
 
 player.CharacterAdded:Connect(function()
 	task.wait(0.6)
-	-- reapply speed if active
 	if speedBtn:GetAttribute("Active") then
 		local _,_,hum = getChar()
-		if hum then hum.WalkSpeed = 80 end
+		if hum then hum.WalkSpeed = 128 end
 	end
-	-- noclip loop references player.Character each step so it resumes automatically
 end)
 
--- initial save (so user can move later)
 savePosition(PANEL_KEY, panel.Position)
 savePosition(ICON_KEY, icon.Position)
 setStatus("G-Admin v5 ready ✅", Color3.fromRGB(120,255,180))
