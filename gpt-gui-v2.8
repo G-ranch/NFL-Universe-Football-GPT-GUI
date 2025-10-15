@@ -1,10 +1,9 @@
---// NFL Admin Panel v3 - Polished GUI with working Auto Tackle & improved behavior
---// by ChatGPT (safe local-only)
+--// NFL Admin Panel - Polished GUI with animations
+--// by ChatGPT
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
-local Workspace = game:GetService("Workspace")
 
 local player = Players.LocalPlayer
 local char, hum, hrp
@@ -16,25 +15,11 @@ local function getChar()
 	return char, hrp, hum
 end
 
--- Utility: find the football and owner
-local function findFootball()
-	for _, obj in ipairs(Workspace:GetDescendants()) do
-		if obj:IsA("BasePart") and obj.Name:lower():find("football") then
-			local parent = obj.Parent
-			if parent and Players:FindFirstChild(parent.Name) then
-				return obj, parent.Name, true
-			else
-				return obj, "None", false
-			end
-		end
-	end
-end
-
---// GUI Setup
+--// Create GUI
 local gui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
 gui.Name = "NFLAdminPanel"
 
--- Panel
+--// Main Frame
 local panel = Instance.new("Frame")
 panel.Size = UDim2.new(0, 380, 0, 300)
 panel.Position = UDim2.new(0.5, -190, 0.5, -150)
@@ -42,7 +27,6 @@ panel.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
 panel.BackgroundTransparency = 0.2
 panel.Active = true
 panel.Draggable = true
-panel.Visible = true
 panel.Parent = gui
 
 local corner = Instance.new("UICorner", panel)
@@ -53,7 +37,7 @@ stroke.Thickness = 2
 stroke.Color = Color3.fromRGB(80, 120, 255)
 stroke.Transparency = 0.4
 
--- Title
+--// Title Bar
 local title = Instance.new("TextLabel", panel)
 title.Size = UDim2.new(1, -40, 0, 40)
 title.Position = UDim2.new(0, 10, 0, 0)
@@ -64,7 +48,7 @@ title.TextSize = 20
 title.Font = Enum.Font.GothamBold
 title.TextXAlignment = Enum.TextXAlignment.Left
 
--- Minimize
+--// Minimize Button
 local minimizeBtn = Instance.new("TextButton", panel)
 minimizeBtn.Text = "—"
 minimizeBtn.Font = Enum.Font.GothamBold
@@ -74,14 +58,13 @@ minimizeBtn.Size = UDim2.new(0, 40, 0, 40)
 minimizeBtn.Position = UDim2.new(1, -45, 0, 0)
 minimizeBtn.BackgroundTransparency = 1
 
--- Buttons layout
+--// Buttons Layout
 local buttonLayout = Instance.new("UIListLayout", panel)
 buttonLayout.Padding = UDim.new(0, 10)
 buttonLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 buttonLayout.VerticalAlignment = Enum.VerticalAlignment.Center
 buttonLayout.FillDirection = Enum.FillDirection.Vertical
 
--- Button creator
 local function createButton(text)
 	local btn = Instance.new("TextButton")
 	btn.Size = UDim2.new(0, 280, 0, 45)
@@ -91,7 +74,7 @@ local function createButton(text)
 	btn.Font = Enum.Font.GothamBold
 	btn.TextSize = 18
 	btn.AutoButtonColor = false
-
+	
 	local c = Instance.new("UICorner", btn)
 	local s = Instance.new("UIStroke", btn)
 	s.Color = Color3.fromRGB(100, 140, 255)
@@ -111,7 +94,7 @@ local function createButton(text)
 	return btn
 end
 
--- Buttons
+--// Buttons
 local stealBtn = createButton("🏈 STEAL BALL")
 local tackleBtn = createButton("💥 AUTO TACKLE")
 local speedBtn = createButton("⚡ SUPER SPEED (128)")
@@ -122,7 +105,7 @@ tackleBtn.Parent = panel
 speedBtn.Parent = panel
 noclipBtn.Parent = panel
 
--- Status label
+--// Status label
 local statusLabel = Instance.new("TextLabel", panel)
 statusLabel.Size = UDim2.new(1, 0, 0, 40)
 statusLabel.Text = "Ready to steal! 😈"
@@ -130,6 +113,68 @@ statusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
 statusLabel.Font = Enum.Font.GothamBold
 statusLabel.TextSize = 18
 statusLabel.BackgroundTransparency = 1
+
+--// Functionalities
+local magnetActive = false
+local magnetLoop
+local function findFootball()
+	for _, obj in ipairs(workspace:GetDescendants()) do
+		if obj:IsA("BasePart") and obj.Name:lower():find("football") then
+			return obj, "Unknown"
+		end
+	end
+end
+
+stealBtn.MouseButton1Click:Connect(function()
+	magnetActive = not magnetActive
+	if magnetActive then
+		local ball = findFootball()
+		if not ball then
+			statusLabel.Text = "❌ No loose ball found!"
+			statusLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
+			magnetActive = false
+			wait(2)
+			statusLabel.Text = "Ready to steal! 😈"
+			statusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+			return
+		end
+		stealBtn.Text = "🏈 STEALING: ON"
+		stealBtn.BackgroundColor3 = Color3.fromRGB(50, 255, 100)
+		statusLabel.Text = "🏈 GRABBING LOOSE BALL!"
+		statusLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
+		
+		magnetLoop = RunService.Heartbeat:Connect(function()
+			local _, hrp = getChar()
+			if not hrp then return end
+			local ball = findFootball()
+			if ball then
+				local distance = (hrp.Position - ball.Position).Magnitude
+				if distance > 5 then
+					pcall(function()
+						hrp.CFrame = CFrame.new(ball.Position + Vector3.new(0, 3, 0))
+					end)
+					statusLabel.Text = "🏈 TELEPORTING to loose ball!"
+				end
+			else
+				magnetActive = false
+				stealBtn.Text = "🏈 STEAL BALL"
+				stealBtn.BackgroundColor3 = Color3.fromRGB(50, 60, 90)
+				statusLabel.Text = "❌ No loose ball found!"
+				statusLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
+				if magnetLoop then magnetLoop:Disconnect() end
+				wait(2)
+				statusLabel.Text = "Ready to steal! 😈"
+				statusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+			end
+		end)
+	else
+		stealBtn.Text = "🏈 STEAL BALL"
+		stealBtn.BackgroundColor3 = Color3.fromRGB(50, 60, 90)
+		statusLabel.Text = "Ready to steal! 😈"
+		statusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+		if magnetLoop then magnetLoop:Disconnect() end
+	end
+end)
 
 -- Super Speed
 local speedOn = false
@@ -154,102 +199,31 @@ noclipBtn.MouseButton1Click:Connect(function()
 	if noclipOn then
 		noclipBtn.Text = "🚫 NOCLIP: ON"
 		noclipBtn.BackgroundColor3 = Color3.fromRGB(50, 255, 100)
+		RunService.Stepped:Connect(function()
+			if noclipOn then
+				for _, v in pairs(char:GetDescendants()) do
+					if v:IsA("BasePart") then
+						v.CanCollide = false
+					end
+				end
+			end
+		end)
 	else
 		noclipBtn.Text = "🚫 NOCLIP"
 		noclipBtn.BackgroundColor3 = Color3.fromRGB(50, 60, 90)
 	end
 end)
 
-RunService.Stepped:Connect(function()
-	if noclipOn and char then
-		for _, v in pairs(char:GetDescendants()) do
-			if v:IsA("BasePart") then
-				v.CanCollide = false
-			end
-		end
-	end
-end)
-
--- Steal Ball
-local magnetActive = false
-local magnetLoop
-stealBtn.MouseButton1Click:Connect(function()
-	magnetActive = not magnetActive
-	if magnetActive then
-		local ball, owner, held = findFootball()
-		if not ball then
-			statusLabel.Text = "❌ No loose ball found!"
-			statusLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
-			magnetActive = false
-			task.wait(2)
-			statusLabel.Text = "Ready to steal! 😈"
-			statusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
-			return
-		end
-
-		stealBtn.Text = "🏈 STEALING: ON"
-		stealBtn.BackgroundColor3 = Color3.fromRGB(50, 255, 100)
-		statusLabel.Text = "🏈 Moving toward ball!"
-		statusLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
-
-		magnetLoop = RunService.Heartbeat:Connect(function()
-			local _, hrp = getChar()
-			if not hrp then return end
-			local ball, _, held = findFootball()
-			if ball and not held then
-				local direction = (ball.Position - hrp.Position).Unit
-				local targetPos = ball.Position - direction * 5 + Vector3.new(0, 3, 0)
-				pcall(function()
-					hrp.CFrame = CFrame.new(targetPos, ball.Position)
-				end)
-			end
-		end)
-	else
-		if magnetLoop then magnetLoop:Disconnect() end
-		stealBtn.Text = "🏈 STEAL BALL"
-		stealBtn.BackgroundColor3 = Color3.fromRGB(50, 60, 90)
-		statusLabel.Text = "Ready to steal! 😈"
-		statusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
-	end
-end)
-
--- Auto Tackle
-local tackleActive = false
-local tackleLoop
+-- Auto Tackle placeholder (you can fill with logic)
 tackleBtn.MouseButton1Click:Connect(function()
-	tackleActive = not tackleActive
-	if tackleActive then
-		tackleBtn.Text = "💥 AUTO TACKLE: ON"
-		tackleBtn.BackgroundColor3 = Color3.fromRGB(50, 255, 100)
-		statusLabel.Text = "💥 Chasing ball carrier!"
-		statusLabel.TextColor3 = Color3.fromRGB(255, 255, 100)
-
-		tackleLoop = RunService.Heartbeat:Connect(function()
-			local _, hrp = getChar()
-			if not hrp then return end
-			local ball, ownerName, held = findFootball()
-			if ball and held and ownerName then
-				local targetPlayer = Players:FindFirstChild(ownerName)
-				if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
-					local targetHRP = targetPlayer.Character.HumanoidRootPart
-					local dir = (targetHRP.Position - hrp.Position).Unit
-					local pos = targetHRP.Position - dir * 5 + Vector3.new(0, 3, 0)
-					pcall(function()
-						hrp.CFrame = CFrame.new(pos, targetHRP.Position)
-					end)
-				end
-			end
-		end)
-	else
-		if tackleLoop then tackleLoop:Disconnect() end
-		tackleBtn.Text = "💥 AUTO TACKLE"
-		tackleBtn.BackgroundColor3 = Color3.fromRGB(50, 60, 90)
-		statusLabel.Text = "Ready to steal! 😈"
-		statusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
-	end
+	statusLabel.Text = "💥 Auto Tackle feature not yet configured!"
+	statusLabel.TextColor3 = Color3.fromRGB(255, 255, 100)
+	wait(2)
+	statusLabel.Text = "Ready to steal! 😈"
+	statusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
 end)
 
--- Minimize to draggable NFL icon
+--// Minimize to NFL Icon
 local nflIcon = Instance.new("TextButton")
 nflIcon.Text = "🏈 NFL"
 nflIcon.Font = Enum.Font.GothamBold
@@ -271,7 +245,6 @@ glow.Thickness = 2
 glow.Color = Color3.fromRGB(140, 180, 255)
 glow.Transparency = 0.3
 
--- Hover animation
 nflIcon.MouseEnter:Connect(function()
 	TweenService:Create(nflIcon, TweenInfo.new(0.25, Enum.EasingStyle.Quint), {
 		BackgroundColor3 = Color3.fromRGB(100,140,255),
@@ -287,7 +260,7 @@ nflIcon.MouseLeave:Connect(function()
 	TweenService:Create(glow, TweenInfo.new(0.25), {Transparency = 0.3}):Play()
 end)
 
--- Floating animation
+-- Float animation
 task.spawn(function()
 	while task.wait(2) do
 		if nflIcon.Visible then
@@ -312,9 +285,8 @@ minimizeBtn.MouseButton1Click:Connect(function()
 	nflIcon.Visible = true
 end)
 
--- Restore behavior (open panel where icon is)
+-- Restore behavior
 nflIcon.MouseButton1Click:Connect(function()
-	panel.Position = nflIcon.Position
 	panel.Visible = true
 	TweenService:Create(panel, TweenInfo.new(0.3), {Size = UDim2.new(0,380,0,300), BackgroundTransparency = 0.2}):Play()
 	nflIcon.Visible = false
