@@ -1,120 +1,71 @@
--- Delta-Friendly Admin Panel (Client Only)
--- Version 3.3 | Better Steal Ball, Auto Tackle, SuperSpeed, NoClip + Draggable UI
+-- ⚡ G-Admin Panel v4 (Clean Edition)
+-- Delta-friendly, client-only. Auto-open, draggable icon (30% smaller), position memory, fixed Steal Ball + Auto Tackle.
+-- Paste into an executor / run as a LocalScript inside PlayerGui
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
 local player = Players.LocalPlayer
 
--- // GUI Setup
-local screenGui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
-screenGui.Name = "DeltaAdminPanel"
-
-local panel = Instance.new("Frame", screenGui)
-panel.Size = UDim2.new(0, 210, 0, 300) -- 30% smaller
-panel.Position = UDim2.new(0, 50, 0.5, -150)
-panel.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
-panel.BorderSizePixel = 0
-panel.Active = true
-panel.Draggable = true
-
-local corner = Instance.new("UICorner", panel)
-corner.CornerRadius = UDim.new(0, 10)
-
-local title = Instance.new("TextLabel", panel)
-title.Size = UDim2.new(1, 0, 0, 28)
-title.BackgroundTransparency = 1
-title.Text = "⚡ Delta Admin v3.3"
-title.TextColor3 = Color3.fromRGB(255, 255, 255)
-title.Font = Enum.Font.GothamBold
-title.TextSize = 14
-
--- // Make Panel Draggable Anywhere
-local dragging, dragStart, startPos
-panel.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 then
-		dragging = true
-		dragStart = input.Position
-		startPos = panel.Position
-	end
-end)
-UserInputService.InputChanged:Connect(function(input)
-	if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-		local delta = input.Position - dragStart
-		panel.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-	end
-end)
-UserInputService.InputEnded:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 then
-		dragging = false
-	end
-end)
-
-local layout = Instance.new("UIListLayout", panel)
-layout.Padding = UDim.new(0, 6)
-layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-layout.VerticalAlignment = Enum.VerticalAlignment.Top
-layout.SortOrder = Enum.SortOrder.LayoutOrder
-title.LayoutOrder = 0
-
-local function newButton(text)
-	local b = Instance.new("TextButton")
-	b.Size = UDim2.new(1, -16, 0, 30)
-	b.Position = UDim2.new(0, 8, 0, 0)
-	b.BackgroundColor3 = Color3.fromRGB(50, 60, 90)
-	b.Text = text
-	b.TextColor3 = Color3.fromRGB(255, 255, 255)
-	b.Font = Enum.Font.Gotham
-	b.TextSize = 13
-	b.AutoButtonColor = true
-	local c = Instance.new("UICorner", b)
-	c.CornerRadius = UDim.new(0, 8)
-	return b
-end
-
-local statusLabel = Instance.new("TextLabel", panel)
-statusLabel.Size = UDim2.new(1, -16, 0, 25)
-statusLabel.BackgroundTransparency = 1
-statusLabel.Text = "Status: Ready 😎"
-statusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
-statusLabel.Font = Enum.Font.Gotham
-statusLabel.TextSize = 13
-statusLabel.LayoutOrder = 99
-
-local function setStatus(txt, color)
-	statusLabel.Text = txt
-	statusLabel.TextColor3 = color
-	task.delay(2.5, function()
-		statusLabel.Text = "Status: Ready 😎"
-		statusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
-	end)
+-- --------- Utilities ----------
+local function safeWait()
+	task.wait()
 end
 
 local function getChar()
-	local c = player.Character or player.CharacterAdded:Wait()
-	return c, c:FindFirstChild("HumanoidRootPart")
+	local char = player.Character or player.CharacterAdded:Wait()
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	return char, hrp, hum
 end
 
--- // Smarter Football Finder
+-- store/load UDim2 position as string "xScale,xOffset,yScale,yOffset"
+local function savePosition(key, udim2)
+	local v = player:FindFirstChild("PlayerGui") and player.PlayerGui:FindFirstChild(key)
+	if not v then
+		v = Instance.new("StringValue")
+		v.Name = key
+		v.Parent = player.PlayerGui
+	end
+	local s = string.format("%f,%d,%f,%d", udim2.X.Scale, udim2.X.Offset, udim2.Y.Scale, udim2.Y.Offset)
+	v.Value = s
+end
+
+local function loadPosition(key, default)
+	local v = player:FindFirstChild("PlayerGui") and player.PlayerGui:FindFirstChild(key)
+	if not v or v.Value == "" then
+		return default
+	end
+	local a,b,c,d = v.Value:match("([^,]+),([^,]+),([^,]+),([^,]+)")
+	if not a then return default end
+	local xs = tonumber(a) or default.X.Scale
+	local xo = tonumber(b) or default.X.Offset
+	local ys = tonumber(c) or default.Y.Scale
+	local yo = tonumber(d) or default.Y.Offset
+	return UDim2.new(xs, xo, ys, yo)
+end
+
+-- --------- Smart football finder ----------
 local function findFootball()
-	local nearest, nearestDist, holderName, held = nil, math.huge, "None", false
+	local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	local origin = hrp and hrp.Position or Vector3.new(0,0,0)
+	local nearest, nd = nil, math.huge
+	local holderName, held = "None", false
 	for _, obj in ipairs(Workspace:GetDescendants()) do
 		if obj:IsA("BasePart") and obj.Name:lower():find("football") and not obj.Anchored then
-			local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-			if hrp then
-				local distance = (obj.Position - hrp.Position).Magnitude
-				if distance < nearestDist and distance < 500 then
-					nearest = obj
-					nearestDist = distance
-					if obj.Parent and Players:FindFirstChild(obj.Parent.Name) then
-						holderName = obj.Parent.Name
-						held = true
-					else
-						holderName = "None"
-						held = false
-					end
+			local dist = (obj.Position - origin).Magnitude
+			if dist < nd and dist < 500 then
+				nearest, nd = obj, dist
+				local p = obj.Parent
+				if p and Players:FindFirstChild(p.Name) then
+					holderName = p.Name
+					held = true
+				else
+					holderName = "None"
+					held = false
 				end
 			end
 		end
@@ -122,7 +73,79 @@ local function findFootball()
 	return nearest, holderName, held
 end
 
--- // Buttons
+-- --------- GUI ----------
+local gui = Instance.new("ScreenGui")
+gui.Name = "GAdminPanelGui"
+gui.Parent = player:WaitForChild("PlayerGui")
+gui.ResetOnSpawn = false
+
+local PANEL_KEY = "GAdminPanel_Position"
+local ICON_KEY = "GAdminIcon_Position"
+
+-- Panel (compact)
+local panel = Instance.new("Frame", gui)
+panel.Size = UDim2.new(0, 240, 0, 320)
+panel.Position = loadPosition(PANEL_KEY, UDim2.new(0, 50, 0.5, -160))
+panel.AnchorPoint = Vector2.new(0,0)
+panel.BackgroundColor3 = Color3.fromRGB(28,28,36)
+panel.BorderSizePixel = 0
+panel.Active = true
+
+local panelCorner = Instance.new("UICorner", panel)
+panelCorner.CornerRadius = UDim.new(0,10)
+
+local title = Instance.new("TextLabel", panel)
+title.Size = UDim2.new(1, -16, 0, 30)
+title.Position = UDim2.new(0,8,0,8)
+title.BackgroundTransparency = 1
+title.Text = "⚡ G-Admin Panel v4"
+title.Font = Enum.Font.GothamBold
+title.TextSize = 14
+title.TextColor3 = Color3.fromRGB(235,235,245)
+title.TextXAlignment = Enum.TextXAlignment.Left
+
+local uiList = Instance.new("UIListLayout", panel)
+uiList.Padding = UDim.new(0,8)
+uiList.HorizontalAlignment = Enum.HorizontalAlignment.Center
+uiList.SortOrder = Enum.SortOrder.LayoutOrder
+uiList.FillDirection = Enum.FillDirection.Vertical
+uiList.Parent = panel
+
+local function newButton(text)
+	local b = Instance.new("TextButton")
+	b.Size = UDim2.new(1, -18, 0, 34)
+	b.BackgroundColor3 = Color3.fromRGB(48,54,80)
+	b.AutoButtonColor = true
+	b.Font = Enum.Font.Gotham
+	b.TextSize = 13
+	b.TextColor3 = Color3.fromRGB(255,255,255)
+	b.Text = text
+	local c = Instance.new("UICorner", b); c.CornerRadius = UDim.new(0,8)
+	return b
+end
+
+local status = Instance.new("TextLabel", panel)
+status.Size = UDim2.new(1, -16, 0, 24)
+status.BackgroundTransparency = 1
+status.Font = Enum.Font.Gotham
+status.TextSize = 13
+status.TextColor3 = Color3.fromRGB(120, 255, 140)
+status.Text = "Ready 😎"
+status.LayoutOrder = 99
+
+local function setStatus(txt, color)
+	status.Text = txt
+	status.TextColor3 = color or Color3.fromRGB(120,255,140)
+	-- auto-fade back
+	task.delay(2.5, function()
+		if status and status.Parent then
+			status.Text = "Ready 😎"
+			status.TextColor3 = Color3.fromRGB(120,255,140)
+		end
+	end)
+end
+
+-- Buttons
 local stealBtn = newButton("🏈 STEAL BALL")
 local tackleBtn = newButton("💥 AUTO TACKLE")
 local speedBtn = newButton("⚡ SUPER SPEED")
@@ -132,37 +155,147 @@ stealBtn.LayoutOrder = 1
 tackleBtn.LayoutOrder = 2
 speedBtn.LayoutOrder = 3
 noclipBtn.LayoutOrder = 4
-statusLabel.LayoutOrder = 5
+status.LayoutOrder = 100
 
 stealBtn.Parent = panel
 tackleBtn.Parent = panel
 speedBtn.Parent = panel
 noclipBtn.Parent = panel
-statusLabel.Parent = panel
+status.Parent = panel
 
--- // Steal Ball (same smart logic)
-local magnetActive, magnetLoop = false, nil
+-- Minimize icon (30% smaller than old 150 -> ~105)
+local icon = Instance.new("TextButton", gui)
+icon.Name = "GAdminIcon"
+icon.Size = UDim2.new(0, 105, 0, 105)
+icon.Position = loadPosition(ICON_KEY, UDim2.new(0, 8, 0.5, -52))
+icon.AnchorPoint = Vector2.new(0,0)
+icon.Text = "🏈"
+icon.Font = Enum.Font.GothamBold
+icon.TextSize = 36
+icon.BackgroundColor3 = Color3.fromRGB(60,100,255)
+icon.BorderSizePixel = 0
+
+local iconCorner = Instance.new("UICorner", icon)
+iconCorner.CornerRadius = UDim.new(0, 32)
+
+local iconStroke = Instance.new("UIStroke", icon)
+iconStroke.Thickness = 2
+iconStroke.Color = Color3.fromRGB(140,180,255)
+iconStroke.Transparency = 0.25
+
+-- Auto-open at join: panel visible, icon hidden
+panel.Visible = true
+icon.Visible = false
+
+-- --------- Draggable anywhere for panel & icon ----------
+local function makeDraggable(frame, saveKey)
+	local dragging, dragStart, startPos
+	frame.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			dragging = true
+			dragStart = input.Position
+			startPos = frame.Position
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					dragging = false
+					-- save
+					pcall(function() savePosition(saveKey, frame.Position) end)
+				end
+			end)
+		end
+	end)
+	UserInputService.InputChanged:Connect(function(input)
+		if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+			local delta = input.Position - dragStart
+			frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+		end
+	end)
+end
+
+makeDraggable(panel, PANEL_KEY)
+makeDraggable(icon, ICON_KEY)
+
+-- Minimize / Restore behavior
+local function minimizeToIcon()
+	-- animate shrink
+	TweenService:Create(panel, TweenInfo.new(0.18), {Size = UDim2.new(0,0,0,0), BackgroundTransparency = 1}):Play()
+	task.wait(0.18)
+	panel.Visible = false
+	icon.Position = panel.Position
+	icon.Visible = true
+	-- save positions
+	savePosition(PANEL_KEY, panel.Position)
+	savePosition(ICON_KEY, icon.Position)
+end
+
+local function restoreFromIcon()
+	panel.Position = icon.Position
+	panel.Visible = true
+	TweenService:Create(panel, TweenInfo.new(0.18), {Size = UDim2.new(0,240,0,320), BackgroundTransparency = 0}):Play()
+	icon.Visible = false
+	-- save
+	savePosition(PANEL_KEY, panel.Position)
+end
+
+-- quick minimize when title double-click or via icon
+title.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 and input.UserInputState == Enum.UserInputState.Begin then
+		-- simple double click detection
+		local t = tick()
+		if title._lastClick and (t - title._lastClick) < 0.35 then
+			minimizeToIcon()
+		end
+		title._lastClick = t
+	end
+end)
+
+icon.MouseButton1Click:Connect(function()
+	if panel.Visible then
+		minimizeToIcon()
+	else
+		restoreFromIcon()
+	end
+end)
+
+-- --------- Feature logic (Steal, Tackle, Speed, NoClip) ----------
+-- Keep loop references so we can disconnect cleanly
+local magnetLoop, tackleLoop, speedLoop, noclipLoop
+
+-- Steal Ball: move in front, auto-stop when close or grabbed
 stealBtn.MouseButton1Click:Connect(function()
-	magnetActive = not magnetActive
-	if magnetActive then
+	local active = stealBtn:GetAttribute("Active")
+	active = not active
+	stealBtn:SetAttribute("Active", active)
+	if active then
 		stealBtn.Text = "🏈 STEALING..."
-		stealBtn.BackgroundColor3 = Color3.fromRGB(50, 255, 100)
-		setStatus("Moving toward ball!", Color3.fromRGB(255, 200, 50))
+		stealBtn.BackgroundColor3 = Color3.fromRGB(50,220,110)
+		setStatus("Moving toward ball!", Color3.fromRGB(255,200,50))
+		if magnetLoop then magnetLoop:Disconnect() end
 		magnetLoop = RunService.Heartbeat:Connect(function()
 			local _, hrp = getChar()
 			local ball, _, held = findFootball()
-			if not hrp or not ball or held then return end
-			local distance = (ball.Position - hrp.Position).Magnitude
-			if distance < 6 then
-				magnetLoop:Disconnect()
-				magnetActive = false
+			if not hrp then return end
+			-- stop if ball missing or someone picked it up
+			if not ball or held then
+				-- someone grabbed it or it vanished; stop
+				if magnetLoop then magnetLoop:Disconnect() end
+				stealBtn:SetAttribute("Active", false)
 				stealBtn.Text = "🏈 STEAL BALL"
-				stealBtn.BackgroundColor3 = Color3.fromRGB(50, 60, 90)
-				setStatus("✅ Ball reached!", Color3.fromRGB(100, 255, 100))
+				stealBtn.BackgroundColor3 = Color3.fromRGB(48,54,80)
+				setStatus("No ball / grabbed.", Color3.fromRGB(255,100,100))
+				return
+			end
+			local dist = (ball.Position - hrp.Position).Magnitude
+			if dist < 6 then
+				if magnetLoop then magnetLoop:Disconnect() end
+				stealBtn:SetAttribute("Active", false)
+				stealBtn.Text = "🏈 STEAL BALL"
+				stealBtn.BackgroundColor3 = Color3.fromRGB(48,54,80)
+				setStatus("✅ Ball reached!", Color3.fromRGB(100,255,140))
 				return
 			end
 			local dir = (ball.Position - hrp.Position).Unit
-			local targetPos = ball.Position + dir * 3 + Vector3.new(0, 3, 0)
+			local targetPos = ball.Position + dir * 3 + Vector3.new(0,3,0)
 			pcall(function()
 				hrp.CFrame = CFrame.new(targetPos, ball.Position)
 			end)
@@ -170,31 +303,37 @@ stealBtn.MouseButton1Click:Connect(function()
 	else
 		if magnetLoop then magnetLoop:Disconnect() end
 		stealBtn.Text = "🏈 STEAL BALL"
-		stealBtn.BackgroundColor3 = Color3.fromRGB(50, 60, 90)
-		setStatus("Steal off 💤", Color3.fromRGB(150, 150, 150))
+		stealBtn.BackgroundColor3 = Color3.fromRGB(48,54,80)
+		setStatus("Steal off 💤", Color3.fromRGB(150,150,150))
 	end
 end)
 
--- // Auto Tackle
-local tackleActive, tackleLoop = false, nil
+-- Auto Tackle: chase carrier, stop when close
 tackleBtn.MouseButton1Click:Connect(function()
-	tackleActive = not tackleActive
-	if tackleActive then
+	local active = tackleBtn:GetAttribute("Active")
+	active = not active
+	tackleBtn:SetAttribute("Active", active)
+	if active then
 		tackleBtn.Text = "💥 AUTO: ON"
-		tackleBtn.BackgroundColor3 = Color3.fromRGB(255, 100, 100)
-		setStatus("Chasing carrier!", Color3.fromRGB(255, 200, 50))
+		tackleBtn.BackgroundColor3 = Color3.fromRGB(255,120,80)
+		setStatus("Chasing carrier!", Color3.fromRGB(255,200,50))
+		if tackleLoop then tackleLoop:Disconnect() end
 		tackleLoop = RunService.Heartbeat:Connect(function()
 			local _, hrp = getChar()
 			local ball, owner, held = findFootball()
-			if hrp and ball and held and owner ~= player.Name then
+			if not hrp or not ball then return end
+			if held and owner and owner ~= player.Name then
 				local target = Players:FindFirstChild(owner)
 				if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
 					local tHRP = target.Character.HumanoidRootPart
 					local dist = (tHRP.Position - hrp.Position).Magnitude
 					if dist > 7 then
 						local dir = (tHRP.Position - hrp.Position).Unit
-						local pos = tHRP.Position - dir * 5 + Vector3.new(0, 3, 0)
-						hrp.CFrame = CFrame.new(pos, tHRP.Position)
+						local pos = tHRP.Position - dir * 5 + Vector3.new(0,3,0)
+						pcall(function() hrp.CFrame = CFrame.new(pos, tHRP.Position) end)
+					else
+						-- within tackle range: stop teleporting
+						-- (we intentionally don't disconnect so it resumes if they run away)
 					end
 				end
 			end
@@ -202,55 +341,103 @@ tackleBtn.MouseButton1Click:Connect(function()
 	else
 		if tackleLoop then tackleLoop:Disconnect() end
 		tackleBtn.Text = "💥 AUTO TACKLE"
-		tackleBtn.BackgroundColor3 = Color3.fromRGB(50, 60, 90)
-		setStatus("Tackle off 💤", Color3.fromRGB(150, 150, 150))
+		tackleBtn.BackgroundColor3 = Color3.fromRGB(48,54,80)
+		setStatus("Tackle off 💤", Color3.fromRGB(150,150,150))
 	end
 end)
 
--- // Super Speed
-local speedActive, speedLoop = false, nil
+-- Super Speed: apply and reset cleanly
 speedBtn.MouseButton1Click:Connect(function()
-	speedActive = not speedActive
-	local char, hrp = getChar()
-	local hum = char:FindFirstChildOfClass("Humanoid")
-	if speedActive then
+	local active = speedBtn:GetAttribute("Active")
+	active = not active
+	speedBtn:SetAttribute("Active", active)
+	local _, _, hum = getChar()
+	if active then
 		speedBtn.Text = "⚡ SPEED: ON"
-		speedBtn.BackgroundColor3 = Color3.fromRGB(255, 200, 0)
-		setStatus("SuperSpeed engaged!", Color3.fromRGB(255, 255, 100))
+		speedBtn.BackgroundColor3 = Color3.fromRGB(255,200,0)
+		setStatus("SuperSpeed engaged!", Color3.fromRGB(255,240,120))
+		if speedLoop then speedLoop:Disconnect() end
 		speedLoop = RunService.Heartbeat:Connect(function()
-			if hum then hum.WalkSpeed = 80 end
+			if hum and hum.Parent then hum.WalkSpeed = 80 end
 		end)
 	else
 		if speedLoop then speedLoop:Disconnect() end
-		if hum then hum.WalkSpeed = 16 end
+		if hum and hum.Parent then hum.WalkSpeed = 16 end
 		speedBtn.Text = "⚡ SUPER SPEED"
-		speedBtn.BackgroundColor3 = Color3.fromRGB(50, 60, 90)
-		setStatus("Speed off 💤", Color3.fromRGB(150, 150, 150))
+		speedBtn.BackgroundColor3 = Color3.fromRGB(48,54,80)
+		setStatus("Speed off 💤", Color3.fromRGB(150,150,150))
 	end
 end)
 
--- // NoClip
-local noclipActive, noclipLoop = false, nil
+-- NoClip: robust disconnection and setting
 noclipBtn.MouseButton1Click:Connect(function()
-	noclipActive = not noclipActive
-	if noclipActive then
+	local active = noclipBtn:GetAttribute("Active")
+	active = not active
+	noclipBtn:SetAttribute("Active", active)
+	if active then
 		noclipBtn.Text = "🧱 NOCLIP: ON"
-		noclipBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 255)
-		setStatus("NoClip active!", Color3.fromRGB(100, 200, 255))
+		noclipBtn.BackgroundColor3 = Color3.fromRGB(0,180,255)
+		setStatus("NoClip active!", Color3.fromRGB(100,200,255))
+		if noclipLoop then noclipLoop:Disconnect() end
 		noclipLoop = RunService.Stepped:Connect(function()
 			local char = player.Character
 			if char then
-				for _, part in ipairs(char:GetDescendants()) do
-					if part:IsA("BasePart") then
-						part.CanCollide = false
-					end
+				for _, p in ipairs(char:GetDescendants()) do
+					if p:IsA("BasePart") then p.CanCollide = false end
 				end
 			end
 		end)
 	else
 		if noclipLoop then noclipLoop:Disconnect() end
 		noclipBtn.Text = "🧱 NOCLIP"
-		noclipBtn.BackgroundColor3 = Color3.fromRGB(50, 60, 90)
-		setStatus("NoClip off 💤", Color3.fromRGB(150, 150, 150))
+		noclipBtn.BackgroundColor3 = Color3.fromRGB(48,54,80)
+		setStatus("NoClip off 💤", Color3.fromRGB(150,150,150))
 	end
 end)
+
+-- When panel is closed/minimized we show icon; when restored, hide icon.
+-- Also save positions when toggling
+local function minimize()
+	minimizeToIcon()
+end
+
+local function restore()
+	restoreFromIcon()
+end
+
+-- Right-click panel to minimize quickly
+panel.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton2 then
+		minimize()
+	end
+end)
+
+-- Save positions periodically to be safe
+task.spawn(function()
+	while true do
+		task.wait(6)
+		if panel and panel.Parent then savePosition(PANEL_KEY, panel.Position) end
+		if icon and icon.Parent then savePosition(ICON_KEY, icon.Position) end
+	end
+end)
+
+-- Clean up on character respawn: reapply toggles reasonably
+player.CharacterAdded:Connect(function()
+	-- small delay for character to load
+	task.wait(0.6)
+	-- restore speed if active
+	if speedBtn:GetAttribute("Active") then
+		local _,_,hum = getChar()
+		if hum then hum.WalkSpeed = 80 end
+	end
+	-- re-enable noclip if active
+	if noclipBtn:GetAttribute("Active") then
+		-- no-op: noclip loop will pick up since it references player.Character each step
+	end
+end)
+
+-- Final: ensure panel auto-opens on join (done above) and icon hidden.
+-- Save initial positions
+savePosition(PANEL_KEY, panel.Position)
+savePosition(ICON_KEY, icon.Position)
+setStatus("G-Admin v4 ready ✅", Color3.fromRGB(120,255,140))
